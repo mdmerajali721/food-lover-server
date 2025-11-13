@@ -112,6 +112,32 @@ app.post(
   }
 );
 
+// PUT /reviews/:id
+app.put(
+  "/reviews/:id",
+  [
+    body("foodName").optional().notEmpty(),
+    body("foodImage").optional().notEmpty(),
+    body("restaurantName").optional().notEmpty(),
+    body("rating").optional().isInt({ min: 0, max: 5 }),
+    handleValidationErrors,
+  ],
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await reviewCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: req.body }
+      );
+      if (result.matchedCount === 0)
+        return res.status(404).json({ message: "Review not found" });
+      res.json({ message: "Review updated successfully" });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to update review" });
+    }
+  }
+);
+
 
 app.get("/", (req, res) => res.send("API running..."));
 app.listen(port, () => console.log(`Server running on http://localhost:${port}`));
