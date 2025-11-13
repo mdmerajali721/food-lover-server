@@ -138,6 +138,20 @@ app.put(
   }
 );
 
+// DELETE /reviews/:id
+app.delete("/reviews/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await reviewCollection.deleteOne({ _id: new ObjectId(id) });
+    if (result.deletedCount === 0)
+      return res.status(404).json({ message: "Review not found" });
+    res.json({ message: "Review deleted" });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to delete review" });
+  }
+});
+
+
 
 app.get("/", (req, res) => res.send("API running..."));
 app.listen(port, () => console.log(`Server running on http://localhost:${port}`));
