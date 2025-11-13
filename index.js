@@ -151,6 +151,32 @@ app.delete("/reviews/:id", async (req, res) => {
   }
 });
 
+// POST /favorites
+app.post(
+  "/favorites",
+  [
+    body("userEmail").isEmail(),
+    body("reviewId").notEmpty(),
+    handleValidationErrors,
+  ],
+  async (req, res) => {
+    try {
+      const { userEmail, reviewId } = req.body;
+      const exists = await favoritesCollection.findOne({ userEmail, reviewId });
+      if (exists) return res.status(400).json({ message: "Already favorited" });
+
+      const result = await favoritesCollection.insertOne({
+        userEmail,
+        reviewId,
+        date: new Date(),
+      });
+      res.status(201).json(result);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to add favorite" });
+    }
+  }
+);
+
 
 
 app.get("/", (req, res) => res.send("API running..."));
