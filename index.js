@@ -177,6 +177,36 @@ app.post(
   }
 );
 
+// GET /favorites/:email
+app.get("/favorites/:email", async (req, res) => {
+  try {
+    const { email } = req.params;
+    const favorites = await favoritesCollection.find({ userEmail: email }).toArray();
+    const populated = await Promise.all(
+      favorites.map(async (fav) => {
+        const review = await reviewCollection.findOne({ _id: new ObjectId(fav.reviewId) });
+        return { ...fav, review };
+      })
+    );
+    res.json(populated);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch favorites" });
+  }
+});
+
+// DELETE /favorites/:id
+app.delete("/favorites/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await favoritesCollection.deleteOne({ _id: new ObjectId(id) });
+    if (result.deletedCount === 0)
+      return res.status(404).json({ message: "Favorite not found" });
+    res.json({ message: "Favorite removed" });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to delete favorite" });
+  }
+});
+
 
 
 app.get("/", (req, res) => res.send("API running..."));
