@@ -14,29 +14,31 @@ app.use(cors());
 app.use(helmet());
 app.use(express.json());
 
-//  DATABASE 
+// DATABASE
 const client = new MongoClient(process.env.MONGO_URI);
 let reviewCollection, favoritesCollection;
 
-async function connectDB() {
-  try {
-    await client.connect();
-    const db = client.db(process.env.DB_NAME || "foodLoversDB");
-    reviewCollection = db.collection("reviews");
-    favoritesCollection = db.collection("favorites");
+function connectDB() {
+  client
+    .connect()
+    .then(() => {
+      const db = client.db(process.env.DB_NAME || "foodLoversDB");
+      reviewCollection = db.collection("reviews");
+      favoritesCollection = db.collection("favorites");
 
-    // Optional text index for faster search
-    await reviewCollection.createIndex({ foodName: "text" });
-
-    console.log("MongoDB connected");
-  } catch (err) {
-    console.error("MongoDB connection failed:", err);
-    process.exit(1);
-  }
+      return reviewCollection.createIndex({ foodName: "text" });
+    })
+    .then(() => {
+      console.log("MongoDB connected");
+    })
+    .catch((err) => {
+      console.error("MongoDB connection failed:", err);
+      process.exit(1);
+    });
 }
 connectDB();
 
-// VALIDATION ERROR HANDLER
+// VALIDATION HANDLER
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty())
@@ -44,50 +46,50 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
-// GET /reviews?userEmail=&search=
-app.get("/reviews", async (req, res) => {
-  try {
-    const { userEmail, search } = req.query;
-    const query = {};
+// GET /reviews
+app.get("/reviews", (req, res) => {
+  const { userEmail, search } = req.query;
+  const query = {};
 
-    if (userEmail) query.userEmail = userEmail;
-    if (search && search.trim() !== "") {
-      query.foodName = { $regex: search, $options: "i" };
-    }
-
-    const reviews = await reviewCollection.find(query).sort({ date: -1 }).toArray();
-    res.json({ reviews: reviews.map(r => ({ ...r, rating: Number(r.rating) })) });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch reviews" });
+  if (userEmail) query.userEmail = userEmail;
+  if (search && search.trim() !== "") {
+    query.foodName = { $regex: search, $options: "i" };
   }
+
+  reviewCollection
+    .find(query)
+    .sort({ date: -1 })
+    .toArray()
+    .then((reviews) =>
+      res.json({
+        reviews: reviews.map((r) => ({ ...r, rating: Number(r.rating) })),
+      })
+    )
+    .catch(() => res.status(500).json({ message: "Failed to fetch reviews" }));
 });
 
 // GET /reviews/top
-app.get("/reviews/top", async (req, res) => {
-  try {
-    const topReviews = await reviewCollection
-      .find()
-      .sort({ rating: -1 })
-      .limit(6)
-      .toArray();
-    res.json(topReviews.map(r => ({ ...r, rating: Number(r.rating) })));
-  } catch (err) {
-    res.status(500).json({ message: "Failed to fetch top reviews" });
-  }
+app.get("/reviews/top", (req, res) => {
+  reviewCollection
+    .find()
+    .sort({ rating: -1 })
+    .limit(6)
+    .toArray()
+    .then((topReviews) =>
+      res.json(topReviews.map((r) => ({ ...r, rating: Number(r.rating) })))
+    )
+    .catch(() => res.status(500).json({ message: "Failed to fetch top reviews" }));
 });
 
 // GET /reviews/:id
-app.get("/reviews/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const review = await reviewCollection.findOne({ _id: new ObjectId(id) });
-    if (!review) return res.status(404).json({ message: "Review not found" });
-    res.json({ ...review, rating: Number(review.rating) });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch review" });
-  }
+app.get("/reviews/:id", (req, res) => {
+  reviewCollection
+    .findOne({ _id: new ObjectId(req.params.id) })
+    .then((review) => {
+      if (!review) return res.status(404).json({ message: "Review not found" });
+      res.json({ ...review, rating: Number(review.rating) });
+    })
+    .catch(() => res.status(500).json({ message: "Failed to fetch review" }));
 });
 
 // POST /reviews
@@ -101,14 +103,13 @@ app.post(
     body("userEmail").isEmail(),
     handleValidationErrors,
   ],
-  async (req, res) => {
-    try {
-      const review = { ...req.body, date: new Date() };
-      const result = await reviewCollection.insertOne(review);
-      res.status(201).json(result);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to add review" });
-    }
+  (req, res) => {
+    const review = { ...req.body, date: new Date() };
+
+    reviewCollection
+      .insertOne(review)
+      .then((result) => res.status(201).json(result))
+      .catch(() => res.status(500).json({ message: "Failed to add review" }));
   }
 );
 
@@ -122,33 +123,31 @@ app.put(
     body("rating").optional().isInt({ min: 0, max: 5 }),
     handleValidationErrors,
   ],
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const result = await reviewCollection.updateOne(
-        { _id: new ObjectId(id) },
+  (req, res) => {
+    reviewCollection
+      .updateOne(
+        { _id: new ObjectId(req.params.id) },
         { $set: req.body }
-      );
-      if (result.matchedCount === 0)
-        return res.status(404).json({ message: "Review not found" });
-      res.json({ message: "Review updated successfully" });
-    } catch (err) {
-      res.status(500).json({ message: "Failed to update review" });
-    }
+      )
+      .then((result) => {
+        if (result.matchedCount === 0)
+          return res.status(404).json({ message: "Review not found" });
+        res.json({ message: "Review updated successfully" });
+      })
+      .catch(() => res.status(500).json({ message: "Failed to update review" }));
   }
 );
 
 // DELETE /reviews/:id
-app.delete("/reviews/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await reviewCollection.deleteOne({ _id: new ObjectId(id) });
-    if (result.deletedCount === 0)
-      return res.status(404).json({ message: "Review not found" });
-    res.json({ message: "Review deleted" });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to delete review" });
-  }
+app.delete("/reviews/:id", (req, res) => {
+  reviewCollection
+    .deleteOne({ _id: new ObjectId(req.params.id) })
+    .then((result) => {
+      if (result.deletedCount === 0)
+        return res.status(404).json({ message: "Review not found" });
+      res.json({ message: "Review deleted" });
+    })
+    .catch(() => res.status(500).json({ message: "Failed to delete review" }));
 });
 
 // POST /favorites
@@ -159,55 +158,60 @@ app.post(
     body("reviewId").notEmpty(),
     handleValidationErrors,
   ],
-  async (req, res) => {
-    try {
-      const { userEmail, reviewId } = req.body;
-      const exists = await favoritesCollection.findOne({ userEmail, reviewId });
-      if (exists) return res.status(400).json({ message: "Already favorited" });
+  (req, res) => {
+    const { userEmail, reviewId } = req.body;
 
-      const result = await favoritesCollection.insertOne({
-        userEmail,
-        reviewId,
-        date: new Date(),
-      });
-      res.status(201).json(result);
-    } catch (err) {
-      res.status(500).json({ message: "Failed to add favorite" });
-    }
+    favoritesCollection
+      .findOne({ userEmail, reviewId })
+      .then((exists) => {
+        if (exists)
+          return res.status(400).json({ message: "Already favorited" });
+
+        return favoritesCollection.insertOne({
+          userEmail,
+          reviewId,
+          date: new Date(),
+        });
+      })
+      .then((result) => result && res.status(201).json(result))
+      .catch(() => res.status(500).json({ message: "Failed to add favorite" }));
   }
 );
 
 // GET /favorites/:email
-app.get("/favorites/:email", async (req, res) => {
-  try {
-    const { email } = req.params;
-    const favorites = await favoritesCollection.find({ userEmail: email }).toArray();
-    const populated = await Promise.all(
-      favorites.map(async (fav) => {
-        const review = await reviewCollection.findOne({ _id: new ObjectId(fav.reviewId) });
-        return { ...fav, review };
-      })
-    );
-    res.json(populated);
-  } catch (err) {
-    res.status(500).json({ message: "Failed to fetch favorites" });
-  }
+app.get("/favorites/:email", (req, res) => {
+  favoritesCollection
+    .find({ userEmail: req.params.email })
+    .toArray()
+    .then((favorites) =>
+      Promise.all(
+        favorites.map((fav) =>
+          reviewCollection
+            .findOne({ _id: new ObjectId(fav.reviewId) })
+            .then((review) => ({ ...fav, review }))
+        )
+      )
+    )
+    .then((populated) => res.json(populated))
+    .catch(() => res.status(500).json({ message: "Failed to fetch favorites" }));
 });
 
 // DELETE /favorites/:id
-app.delete("/favorites/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await favoritesCollection.deleteOne({ _id: new ObjectId(id) });
-    if (result.deletedCount === 0)
-      return res.status(404).json({ message: "Favorite not found" });
-    res.json({ message: "Favorite removed" });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to delete favorite" });
-  }
+app.delete("/favorites/:id", (req, res) => {
+  favoritesCollection
+    .deleteOne({ _id: new ObjectId(req.params.id) })
+    .then((result) => {
+      if (result.deletedCount === 0)
+        return res.status(404).json({ message: "Favorite not found" });
+      res.json({ message: "Favorite removed" });
+    })
+    .catch(() => res.status(500).json({ message: "Failed to delete favorite" }));
 });
 
-
-
+// ROOT
 app.get("/", (req, res) => res.send("API running..."));
-app.listen(port, () => console.log(`Server running on http://localhost:${port}`));
+
+// START SERVER
+app.listen(port, () =>
+  console.log(`Server running on http://localhost:${port}`)
+);
